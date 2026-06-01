@@ -170,15 +170,22 @@ setInterval(async () => {
   }
 }, 60000)
 
-// Supabase Realtime — reconnexion automatique sur erreur
+// Supabase Realtime — reconnexion avec backoff exponentiel + anti-cascade
 let realtimeChannel = null
 let realtimeRetries = 0
+let realtimeTimer   = null  // un seul timer actif à la fois
+let realtimeActive  = false // évite les appels simultanés
 
 function connectRealtime() {
+  if (realtimeActive) return // anti-cascade : une seule tentative à la fois
+  realtimeActive = true
+
+  if (realtimeTimer) { clearTimeout(realtimeTimer); realtimeTimer = null }
   if (realtimeChannel) {
     try { supabase.removeChannel(realtimeChannel) } catch {}
     realtimeChannel = null
   }
+
   realtimeChannel = supabase
     .channel(`wc-agent1-${Date.now()}`)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'prospects' }, (payload) => {
@@ -191,12 +198,15 @@ function connectRealtime() {
       log('A1', `Realtime: ${status}${err ? ' — ' + (err.message || err) : ''}`)
       if (status === 'SUBSCRIBED') {
         realtimeRetries = 0
-        log('A1', '✅ Realtime connecté')
+        realtimeActive  = false
+        log('A1', '✅ Realtime connecté — polling suspendu')
       } else if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) {
+        realtimeActive = false // libère le verrou avant de reschedule
         realtimeRetries++
-        const delay = Math.min(30000, 5000 * realtimeRetries)
-        log('A1', `⚠️ Reconnexion dans ${delay / 1000}s (tentative ${realtimeRetries})`)
-        setTimeout(connectRealtime, delay)
+        // Backoff exponentiel : 5s, 10s, 20s, 40s … max 5 min
+        const delay = Math.min(300000, 5000 * Math.pow(2, Math.min(realtimeRetries - 1, 6)))
+        log('A1', `⚠️ Reconnexion dans ${Math.round(delay/1000)}s (tentative ${realtimeRetries}) — polling actif`)
+        realtimeTimer = setTimeout(connectRealtime, delay)
       }
     })
 }
@@ -569,6 +579,7 @@ createServer((req, res) => {
 
 process.on('SIGTERM', () => {
   log('SYS', 'Arrêt propre.')
-  supabase.removeChannel(channel)
+  if (realtimeTimer) clearTimeout(realtimeTimer)
+  if (realtimeChannel) try { supabase.removeChannel(realtimeChannel) } catch {}
   process.exit(0)
 })
