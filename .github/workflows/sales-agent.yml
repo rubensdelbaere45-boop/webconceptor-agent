@@ -1,0 +1,38 @@
+name: 🤖 Sales Agent — SMS & Follow-up
+
+on:
+  schedule:
+    # Toutes les 10 minutes de 7h à 20h (heure Paris = UTC+2)
+    # GitHub Actions utilise UTC → 7h Paris = 5h UTC, 20h Paris = 18h UTC
+    - cron: '*/10 5-18 * * *'
+  workflow_dispatch:
+    # Lancement manuel possible depuis GitHub Actions
+
+jobs:
+  sales-agent:
+    name: Contacts prospects et relances SMS
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run sales agent
+        run: node github-action.js
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          BREVO_API_KEY:        ${{ secrets.BREVO_API_KEY }}
+          TELEGRAM_BOT_TOKEN:   ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:     ${{ secrets.TELEGRAM_CHAT_ID }}
+          BASE_URL:             https://webconceptor.fr
