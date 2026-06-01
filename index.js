@@ -10,8 +10,12 @@
    AGENT 6 — Rapport 19h : stats de la journée
    ═══════════════════════════════════════════════════════════════ */
 
-import { createClient } from '@supabase/supabase-js'
+// Polyfill WebSocket pour Node < 22 (Railway utilise Node 20)
+// DOIT être avant tout import Supabase
 import ws from 'ws'
+if (!globalThis.WebSocket) globalThis.WebSocket = ws
+
+import { createClient } from '@supabase/supabase-js'
 import { createServer } from 'http'
 
 // ── Config ──────────────────────────────────────────────────────
@@ -27,9 +31,7 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
   process.exit(1)
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  realtime: { transport: ws },
-})
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 const scheduled = new Map()
 
