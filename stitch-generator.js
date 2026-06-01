@@ -84,23 +84,37 @@ Deep black backgrounds (#0C0C0C), warm gold accents (#C9A96E), Playfair Display 
 
 // ── Injecter le branding WebConceptor ───────────────────────────
 function injectWebConceptorBranding(html, prospect) {
-  const { slug, id } = prospect
+  const { slug } = prospect
+  const isLuxury = Boolean(prospect.is_luxury)
+  const price = isLuxury ? '860&nbsp;€' : '320&nbsp;€'
+
   const orderBar = `
-<!-- WebConceptor Luxury Bar -->
+<!-- STITCH_GENERATED -->
 <style>
-.wc-luxury-bar{position:fixed;top:0;left:0;right:0;z-index:99999;height:40px;background:linear-gradient(135deg,#0a0010,#1a0030);display:flex;align-items:center;justify-content:center;gap:16px;backdrop-filter:blur(12px);border-bottom:1px solid rgba(201,169,110,0.3);font-family:-apple-system,sans-serif}
-.wc-luxury-label{color:rgba(255,255,255,0.6);font-size:11px;letter-spacing:0.1em;text-transform:uppercase}
-.wc-luxury-label em{color:#C9A96E;font-style:normal;font-weight:600}
-.wc-luxury-btn{padding:7px 22px;background:linear-gradient(135deg,#C9A96E,#9E7A42);color:#0a0a0a;font-size:11px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;border-radius:100px;cursor:pointer;border:none;transition:all 0.2s;white-space:nowrap}
-.wc-luxury-btn:hover{transform:scale(1.04);box-shadow:0 4px 16px rgba(201,169,110,0.4)}
-@media(max-width:640px){.wc-luxury-label{display:none}}
+.wc-order-bar{position:fixed;top:0;left:0;right:0;z-index:99999;height:44px;background:#0a0a0a;display:flex;align-items:center;justify-content:space-between;padding:0 20px;gap:10px;font-family:-apple-system,sans-serif}
+.wc-order-bar-left{display:flex;align-items:center;gap:16px;flex:1}
+.wc-order-bar-label{color:rgba(255,255,255,0.75);font-size:11px;font-weight:500;white-space:nowrap}
+.wc-trust{display:flex;align-items:center;gap:10px}
+.wc-trust-item{color:rgba(255,255,255,0.45);font-size:10px;white-space:nowrap}
+.wc-trust-sep{color:rgba(255,255,255,0.15);font-size:10px}
+.wc-order-btn{padding:7px 22px;background:#fff;color:#0a0a0a;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;border-radius:100px;cursor:pointer;border:none;white-space:nowrap;flex-shrink:0}
+.wc-order-btn:hover{background:#f0c040;transform:scale(1.03)}
+@media(max-width:640px){.wc-trust{display:none}.wc-order-bar-label{font-size:10px}}
 </style>
-<div class="wc-luxury-bar">
-  <span class="wc-luxury-label">✨ Création <em>Prestige</em> par WebConceptor</span>
-  <button class="wc-luxury-btn" onclick="window.location.href='${BASE_URL}/prospects/${slug}'">Je commande ce site → 860€</button>
+<div class="wc-order-bar">
+  <div class="wc-order-bar-left">
+    <span class="wc-order-bar-label">Votre site web professionnel</span>
+    <div class="wc-trust">
+      <span class="wc-trust-item">✓ Livraison rapide et suivie</span>
+      <span class="wc-trust-sep">·</span>
+      <span class="wc-trust-item">Satisfait ou remboursé 14j</span>
+      <span class="wc-trust-sep">·</span>
+      <span class="wc-trust-item">Paiement sécurisé</span>
+    </div>
+  </div>
+  <button class="wc-order-btn" onclick="window.location.href='${BASE_URL}/prospects/${slug}'">Je commande ce site → ${price}</button>
 </div>
-<div style="height:40px"></div>
-<!-- /WebConceptor -->`
+<div style="height:44px"></div>`
 
   // Unsubscribe pixel (tracking)
   const trackingPixel = `<img src="${BASE_URL}/api/prospect/track-view" data-slug="${slug}" style="display:none" width="1" height="1" aria-hidden="true">`
@@ -121,6 +135,45 @@ function injectWebConceptorBranding(html, prospect) {
 }
 
 // ── Génération principale ────────────────────────────────────────
+// Prompt standard — pour tous les prospects non-luxury
+function buildStandardPrompt(p) {
+  const city = p.city || 'France'
+  const bt = p.business_type || 'business'
+  const rating = p.google_rating ? `${p.google_rating}/5 (${p.google_reviews_count || 0} avis Google)` : ''
+  const about = p.about_scraped ? `\n\nDescription réelle : "${String(p.about_scraped).slice(0, 300)}"` : ''
+  const items = (p.menu_items || []).slice(0, 6).map(m => `• ${m.name}${m.price ? ` — ${m.price}` : ''}`).join('\n')
+  const review = (p.reviews || []).find(r => r.rating >= 4 && r.text?.length > 30)
+
+  return [
+    `Design a beautiful, professional website for "${p.name}", a ${bt} in ${city}, France.`,
+    `Style: modern, clean, warm, professional. Mobile-first responsive.`,
+    rating ? `Google rating: ${rating}` : '',
+    about,
+    '',
+    '1. HERO — Full-width with business name in large WHITE bold font, dark overlay on background image.',
+    `   Title: "${p.name}" — Subtitle: "Votre expert ${bt} à ${city}"`,
+    '   CTA button: "Nous contacter" or "Prendre rendez-vous"',
+    '',
+    '2. ABOUT — Short story, real content, warm tone.',
+    '',
+    items ? `3. SERVICES — Real offerings as cards:\n${items}` : '3. SERVICES — Key services in a clean card grid.',
+    '',
+    review ? `4. TESTIMONIALS — Real review: "${review.text.slice(0, 150)}" — ${review.author} ★${review.rating}` : '4. SOCIAL PROOF — Star rating and customer satisfaction.',
+    '',
+    `5. CONTACT — Phone: ${p.phone || ''}, Address: ${p.address || city}`,
+    '',
+    'REQUIREMENTS:',
+    '- Hero title MUST be white and fully readable (dark overlay on image)',
+    '- Sticky navigation bar',
+    '- All text in French',
+    '- No generic feel — make it feel personal and local',
+  ].filter(Boolean).join('\n')
+}
+
+export async function generateMockup(prospect) {
+  return generateLuxuryMockup(prospect) // wrapper générique
+}
+
 export async function generateLuxuryMockup(prospect) {
   const apiKey = process.env.STITCH_API_KEY
   if (!apiKey) {
@@ -134,8 +187,8 @@ export async function generateLuxuryMockup(prospect) {
   const project = await stitch.createProject(projectTitle)
   console.log(`[Stitch] ✅ Projet créé : ${project.id}`)
 
-  // 2. Générer la page avec le prompt luxury
-  const prompt = buildLuxuryPrompt(prospect)
+  // 2. Générer la page — prompt luxury ou standard selon is_luxury
+  const prompt = prospect.is_luxury ? buildLuxuryPrompt(prospect) : buildStandardPrompt(prospect)
   const screen = await project.generate(prompt, 'DESKTOP')
   console.log(`[Stitch] ✅ Écran généré : ${screen.id}`)
 

@@ -507,16 +507,16 @@ async function agent7_generateLuxuryMockups() {
   if (!process.env.STITCH_API_KEY) return // skip si pas de clé Stitch
 
   try {
-    // Cherche les prospects luxury sans maquette Stitch
+    // Cherche TOUS les prospects envoyés sans maquette Stitch (pas le marker STITCH_GENERATED)
+    // LUXURY en priorité (is_luxury=true), puis le reste
     const { data } = await supabase.from('prospects')
-      .select('id, slug, name, city, business_type, google_rating, google_reviews_count, about_scraped')
-      .eq('is_luxury', true)
-      
-      .in('status', ['found', 'ready'])
+      .select('id, slug, name, city, business_type, google_rating, google_reviews_count, about_scraped, is_luxury, menu_items, reviews')
+      .in('status', ['sent', 'opened', 'found', 'ready'])
       .not('email', 'is', null)
-      .not('email_bounced', 'eq', true)
+      .not('mockup_html', 'like', '%STITCH_GENERATED%')
+      .order('is_luxury', { ascending: false }) // LUXURY en premier
       .order('google_reviews_count', { ascending: false })
-      .limit(3) // max 3 par scan — Stitch prend du temps
+      .limit(5) // max 5 par scan
 
     if (!data?.length) return
 
