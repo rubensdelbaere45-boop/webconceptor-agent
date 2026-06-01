@@ -182,10 +182,18 @@ export async function generateLuxuryMockup(prospect) {
 
   console.log(`[Stitch] 🎨 Génération pour : ${prospect.name} (${prospect.city || '?'})`)
 
-  // 1. Créer le projet Stitch
-  const projectTitle = `WebConceptor — ${prospect.name} ${prospect.city || ''} ${new Date().getFullYear()}`
-  const project = await stitch.createProject(projectTitle)
-  console.log(`[Stitch] ✅ Projet créé : ${project.id}`)
+  // 1. Projet unique fixe — UN seul projet pour tous les prospects
+  // Évite la création de dizaines de projets en cas de retry
+  const FIXED_PROJECT_ID = process.env.STITCH_PROJECT_ID
+  let project
+  if (FIXED_PROJECT_ID) {
+    project = stitch.project(FIXED_PROJECT_ID)
+    console.log(`[Stitch] ♻️ Projet fixe réutilisé : ${FIXED_PROJECT_ID}`)
+  } else {
+    // Premier run : crée le projet et affiche l'ID à mettre en variable
+    project = await stitch.createProject('WebConceptor')
+    console.log(`[Stitch] ✅ Projet créé : ${project.id} → Ajoute STITCH_PROJECT_ID=${project.id} dans Railway`)
+  }
 
   // 2. Générer la page — prompt luxury ou standard selon is_luxury
   // IMPORTANT : ne pas passer deviceType → sinon htmlCode absent de la réponse
