@@ -82,6 +82,32 @@ async function sendSMS(phone, content) {
   } catch (e) { log('SMS', `❌ ${e}`); return false }
 }
 
+// Envoi email Brevo — prospects chauds (1ère vue, relance, offre flash)
+async function sendBrevoEmail(to, toName, subject, html, text) {
+  if (!BREVO_KEY || !to) return false
+  try {
+    const r = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'api-key': BREVO_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        sender: { name: 'WebConceptor', email: 'contact@webconceptor.fr' },
+        to: [{ email: to, name: toName || to }],
+        subject,
+        htmlContent: html,
+        textContent: text,
+        headers: {
+          'List-Unsubscribe': `<https://webconceptor.fr/api/unsubscribe?email=${encodeURIComponent(to)}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        },
+      }),
+    })
+    if (r.ok) { log('EMAIL', `✅ → ${to}`); return true }
+    const d = await r.json().catch(() => ({}))
+    log('EMAIL', `❌ ${d.message || r.status}`)
+    return false
+  } catch (e) { log('EMAIL', `❌ ${e}`); return false }
+}
+
 async function tg(msg, silent = false) {
   if (!TG_TOKEN || !TG_CHAT) return
   fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
@@ -111,6 +137,21 @@ async function agent1_onFirstView(p) {
     if (smsSent) await supabase.from('prospects').update({ hot_sms_sent_at: new Date().toISOString() }).eq('id', p.id)
   }
 
+  // Email Brevo de suivi chaud — envoyé dès la 1ère ouverture de la maquette
+  if (p.email) {
+    const emailHtml = `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#1a1a1a">
+<p style="font-size:15px;margin:0 0 14px">Bonjour,</p>
+<p style="font-size:15px;margin:0 0 14px">Je vois que vous venez de consulter la maquette que j'avais préparée pour <strong>${p.name}</strong>.</p>
+<p style="font-size:15px;margin:0 0 14px">Si vous avez des questions sur le design, le prix ou les délais, je suis disponible maintenant : répondez directement à cet email ou appelez le <strong>06 35 59 24 71</strong>.</p>
+<p style="font-size:15px;margin:0 0 14px">→ <a href="${url}" style="color:#0066ff">Revoir votre maquette</a></p>
+<p style="font-size:14px;color:#555;margin:24px 0 0">Tom Bauer · WebConceptor<br>contact@webconceptor.fr · 06 35 59 24 71</p>
+<p style="font-size:11px;color:#999;margin:20px 0 0;border-top:1px solid #eee;padding-top:12px">
+<a href="https://webconceptor.fr/api/unsubscribe?email=${encodeURIComponent(p.email)}" style="color:#999">Se désabonner</a></p>
+</div>`
+    const emailText = `Bonjour,\n\nJe vois que vous venez de consulter la maquette préparée pour ${p.name}.\n\nDes questions ? Répondez à cet email ou appelez le 06 35 59 24 71.\n\nVotre maquette : ${url}\n\nTom Bauer · WebConceptor`
+    await sendBrevoEmail(p.email, p.name, `Votre maquette — ${p.name}`, emailHtml, emailText)
+  }
+
   await tg(
     `🔥 <b>AGENT 1 — 1ÈRE VUE</b>\n<b>${p.name}</b> · ${p.city || '—'}\n` +
     `📞 ${p.phone || 'aucun'} · ⭐ ${p.google_rating ? p.google_rating + '/5' : '—'}\n` +
@@ -130,7 +171,7 @@ async function agent1_onSecondView(p) {
   const url = `${BASE_URL}/prospects/${p.slug}`
   log('A1', `👀 2ème vue : ${p.name}`)
   if (p.phone) {
-    const txt = gsm(`Tom WebConceptor. Je vois que vous revenez sur la maquette de ${String(p.name||'').slice(0,25)}. Je suis dispo : 06 35 59 24 71. ${url} STOP`).slice(0,160)
+    const txt = gsm(`WebConceptor. Je vois que vous revenez sur la maquette de ${String(p.name||'').slice(0,25)}. Je suis dispo : 06 35 59 24 71. ${url} STOP`).slice(0,160)
     await sendSMS(p.phone, txt)
   }
   await tg(`👀 <b>AGENT 1 — RETOUR</b>\n<b>${p.name}</b> revient sur sa maquette\n📞 ${p.phone || 'aucun'}\n<a href="${url}">→ Maquette</a>`)
@@ -142,7 +183,7 @@ async function agent1_onCartOpened(p) {
   const url = `${BASE_URL}/prospects/${p.slug}`
   log('A1', `🛒 PANIER OUVERT : ${p.name}`)
   if (p.phone) {
-    const txt = gsm(`Tom WebConceptor. Vous etes sur l'ecran de commande pour ${String(p.name||'').slice(0,25)}. Un souci ? 06 35 59 24 71. STOP`).slice(0,160)
+    const txt = gsm(`WebConceptor. Vous etes sur l'ecran de commande pour ${String(p.name||'').slice(0,25)}. Un souci ? 06 35 59 24 71. STOP`).slice(0,160)
     await sendSMS(p.phone, txt)
   }
   await tg(`🛒 <b>AGENT 1 — PANIER OUVERT</b>\n<b>${p.name}</b> · ${p.city || '—'}\n📞 ${p.phone || 'aucun'}\n<a href="${url}">→ Maquette</a>`)
@@ -159,12 +200,12 @@ setInterval(async () => {
 
     if (job.type === '2h' && data.phone) {
       log('A1', `⏰ Follow-up 2h : ${data.name}`)
-      const txt = gsm(`Tom WebConceptor. Votre maquette pour ${String(data.name||'').slice(0,28)} attend. Question ? 06 35 59 24 71 ou ${job.url} STOP`).slice(0,160)
+      const txt = gsm(`WebConceptor. Votre maquette pour ${String(data.name||'').slice(0,28)} attend. Question ? 06 35 59 24 71 ou ${job.url} STOP`).slice(0,160)
       await sendSMS(data.phone, txt)
     }
     if (job.type === 'j1' && data.phone) {
       log('A1', `⏰ Follow-up J+1 : ${data.name}`)
-      const txt = gsm(`Tom WebConceptor. Derniere chance : maquette de ${String(data.name||'').slice(0,25)} retiree dans 24h. 320 EUR, livraison 5j. 06 35 59 24 71. STOP`).slice(0,160)
+      const txt = gsm(`WebConceptor. Derniere chance : maquette de ${String(data.name||'').slice(0,25)} retiree dans 24h. 320 EUR, livraison 5j. 06 35 59 24 71. STOP`).slice(0,160)
       await sendSMS(data.phone, txt)
     }
   }
@@ -266,7 +307,7 @@ async function agent3_coldReactivation() {
     for (const p of data) {
       const url = `${BASE_URL}/prospects/${p.slug}`
       if (p.phone) {
-        const txt = gsm(`Tom WebConceptor. On avait prepare un site pour ${String(p.name||'').slice(0,25)}. Toujours interesse ? Maquette : ${url} STOP`).slice(0,160)
+        const txt = gsm(`WebConceptor. On avait prepare un site pour ${String(p.name||'').slice(0,25)}. Toujours interesse ? Maquette : ${url} STOP`).slice(0,160)
         const ok = await sendSMS(p.phone, txt)
         if (ok) await supabase.from('prospects').update({ final_sms_sent_at: new Date().toISOString() }).eq('id', p.id)
       }
@@ -336,7 +377,7 @@ async function agent5_flashOffer() {
       flashOfferSent.add(p.slug)
       const url = `${BASE_URL}/prospects/${p.slug}?promo=20`
       if (p.phone) {
-        const txt = gsm(`Tom WebConceptor. Offre exclusive pour ${String(p.name||'').slice(0,22)} : 256 EUR au lieu de 320 EUR (-20%) valable 24h. ${url} STOP`).slice(0,160)
+        const txt = gsm(`WebConceptor. Offre exclusive pour ${String(p.name||'').slice(0,22)} : 256 EUR au lieu de 320 EUR (-20%) valable 24h. ${url} STOP`).slice(0,160)
         const ok = await sendSMS(p.phone, txt)
         if (ok) {
           await supabase.from('prospects').update({ followup_sms_sent_at: new Date().toISOString() }).eq('id', p.id)
