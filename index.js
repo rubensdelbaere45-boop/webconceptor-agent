@@ -334,7 +334,7 @@ async function agent5_flashOffer() {
     for (const p of data) {
       if (flashOfferSent.has(p.slug)) continue
       flashOfferSent.add(p.slug)
-      const url = `${BASE_URL}/prospects/${p.slug}`
+      const url = `${BASE_URL}/prospects/${p.slug}?promo=20`
       if (p.phone) {
         const txt = gsm(`Tom WebConceptor. Offre exclusive pour ${String(p.name||'').slice(0,22)} : 256 EUR au lieu de 320 EUR (-20%) valable 24h. ${url} STOP`).slice(0,160)
         const ok = await sendSMS(p.phone, txt)
