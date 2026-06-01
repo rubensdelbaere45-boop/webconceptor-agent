@@ -511,7 +511,7 @@ async function agent7_generateLuxuryMockups() {
     const { data } = await supabase.from('prospects')
       .select('id, slug, name, city, business_type, google_rating, google_reviews_count, about_scraped')
       .eq('is_luxury', true)
-      .eq('stitch_generated', false)
+      
       .in('status', ['found', 'ready'])
       .not('email', 'is', null)
       .not('email_bounced', 'eq', true)
@@ -527,7 +527,6 @@ async function agent7_generateLuxuryMockups() {
       log('A7', `✨ Génération Stitch : ${p.name} (${p.city || '?'})`)
 
       // Marquer comme en cours
-      await supabase.from('prospects').update({ stitch_pending: true }).eq('id', p.id)
 
       try {
         const { html, projectId } = await generateLuxuryMockup(p)
@@ -535,8 +534,6 @@ async function agent7_generateLuxuryMockups() {
         // Sauvegarder dans Supabase
         await supabase.from('prospects').update({
           mockup_html: html,
-          stitch_generated: true,
-          stitch_pending: false,
           updated_at: new Date().toISOString(),
         }).eq('id', p.id)
 
@@ -560,7 +557,6 @@ async function agent7_generateLuxuryMockups() {
         log('A7', `✅ ${p.name} — maquette Stitch + email envoyés`)
       } catch (e) {
         log('A7', `❌ Échec pour ${p.name} : ${e.message}`)
-        await supabase.from('prospects').update({ stitch_pending: false }).eq('id', p.id)
       } finally {
         generatingLuxury.delete(p.slug)
       }
