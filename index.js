@@ -198,15 +198,15 @@ setInterval(async () => {
     const { data } = await supabase.from('prospects').select('id,name,phone,status').eq('slug', job.p.slug).maybeSingle()
     if (!data || data.status === 'converted') continue
 
-    if (job.type === '2h' && data.phone) {
-      log('A1', `⏰ Follow-up 2h : ${data.name}`)
-      const txt = gsm(`WebConceptor. Votre maquette pour ${String(data.name||'').slice(0,28)} attend. Question ? 06 35 59 24 71 ou ${job.url} STOP`).slice(0,160)
-      await sendSMS(data.phone, txt)
+    if (job.type === '2h' && job.p.email) {
+      log('A1', `⏰ Follow-up 2h email : ${data.name}`)
+      const html = `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#1a1a1a"><p style="font-size:15px;margin:0 0 14px">Bonjour,</p><p style="font-size:15px;margin:0 0 14px">Votre maquette pour <strong>${data.name}</strong> est toujours disponible. Une question sur le tarif, la livraison ou le design ? Répondez à cet email ou appelez le 06 35 59 24 71.</p><p style="margin:20px 0"><a href="${job.url}" style="background:#0066ff;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">Voir ma maquette →</a></p><p style="font-size:14px;color:#555;margin:24px 0 0">Tom Bauer — WebConceptor<br>contact@webconceptor.fr</p></div>`
+      await sendBrevoEmail(job.p.email, data.name, `Votre maquette vous attend — ${data.name}`, html, `Votre maquette : ${job.url}\n\nTom Bauer — WebConceptor`)
     }
-    if (job.type === 'j1' && data.phone) {
-      log('A1', `⏰ Follow-up J+1 : ${data.name}`)
-      const txt = gsm(`WebConceptor. Derniere chance : maquette de ${String(data.name||'').slice(0,25)} retiree dans 24h. 320 EUR, livraison 5j. 06 35 59 24 71. STOP`).slice(0,160)
-      await sendSMS(data.phone, txt)
+    if (job.type === 'j1' && job.p.email) {
+      log('A1', `⏰ Follow-up J+1 email : ${data.name}`)
+      const html = `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#1a1a1a"><p style="font-size:15px;margin:0 0 14px">Bonjour,</p><p style="font-size:15px;margin:0 0 14px">Dernière chance — la maquette de <strong>${data.name}</strong> sera retirée dans 24h. Tarif : <strong>320 € TTC</strong>, livraison en 5 jours ouvrés, satisfait ou remboursé 14 jours.</p><p style="margin:20px 0"><a href="${job.url}" style="background:#0066ff;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">Voir ma maquette →</a></p><p style="font-size:14px;color:#555;margin:24px 0 0">Tom Bauer — WebConceptor<br>contact@webconceptor.fr</p></div>`
+      await sendBrevoEmail(job.p.email, data.name, `Dernière chance — maquette retirée dans 24h`, html, `Dernière chance. Votre maquette : ${job.url}\n\nTom Bauer — WebConceptor`)
     }
   }
 }, 60000)
@@ -306,9 +306,17 @@ async function agent3_coldReactivation() {
 
     for (const p of data) {
       const url = `${BASE_URL}/prospects/${p.slug}`
-      if (p.phone) {
-        const txt = gsm(`WebConceptor. On avait prepare un site pour ${String(p.name||'').slice(0,25)}. Toujours interesse ? Maquette : ${url} STOP`).slice(0,160)
-        const ok = await sendSMS(p.phone, txt)
+      // Pas de SMS pour les froids — email Brevo uniquement
+      if (p.email) {
+        const html = `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#1a1a1a">
+<p style="font-size:15px;margin:0 0 14px">Bonjour,</p>
+<p style="font-size:15px;margin:0 0 14px">Je reviens vers vous au sujet de la maquette préparée pour <strong>${p.name}</strong>.</p>
+<p style="font-size:15px;margin:0 0 14px">Elle est toujours disponible ici : <a href="${url}">${url}</a></p>
+<p style="font-size:15px;margin:0 0 14px">Si vous avez des questions, répondez directement à cet email.</p>
+<p style="font-size:14px;color:#555;margin:24px 0 0">Tom Bauer — WebConceptor<br>contact@webconceptor.fr · 06 35 59 24 71</p>
+<p style="font-size:11px;color:#999;margin:16px 0 0;border-top:1px solid #eee;padding-top:12px"><a href="https://webconceptor.fr/api/unsubscribe?email=${encodeURIComponent(p.email)}" style="color:#999">Se désabonner</a></p>
+</div>`
+        const ok = await sendBrevoEmail(p.email, p.name, `Votre maquette — ${p.name}`, html, `Bonjour,\n\nVotre maquette : ${url}\n\nTom Bauer — WebConceptor`)
         if (ok) await supabase.from('prospects').update({ final_sms_sent_at: new Date().toISOString() }).eq('id', p.id)
       }
       await tg(`🔄 <b>AGENT 3 — RELANCE FROID</b>\n<b>${p.name}</b> · ${p.city||'—'}\n📞 ${p.phone||'aucun'}`, true)
@@ -376,9 +384,18 @@ async function agent5_flashOffer() {
       if (flashOfferSent.has(p.slug)) continue
       flashOfferSent.add(p.slug)
       const url = `${BASE_URL}/prospects/${p.slug}?promo=20`
-      if (p.phone) {
-        const txt = gsm(`WebConceptor. Offre exclusive pour ${String(p.name||'').slice(0,22)} : 256 EUR au lieu de 320 EUR (-20%) valable 24h. ${url} STOP`).slice(0,160)
-        const ok = await sendSMS(p.phone, txt)
+      // Pas de SMS pour l'offre flash — email Brevo uniquement
+      if (p.email) {
+        const html = `<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#1a1a1a">
+<div style="background:#e53e3e;color:#fff;padding:12px;border-radius:6px;text-align:center;font-weight:700;margin-bottom:20px">🎁 Offre exclusive -20 % · 256 € au lieu de 320 € · Valable 24h</div>
+<p style="font-size:15px;margin:0 0 14px">Bonjour,</p>
+<p style="font-size:15px;margin:0 0 14px">Je vous propose une offre exclusive pour la maquette de <strong>${p.name}</strong> : <strong>256 € TTC</strong> au lieu de 320 €, soit 20 % de réduction.</p>
+<p style="font-size:15px;margin:0 0 14px">Cette offre est valable 24h uniquement.</p>
+<p style="margin:20px 0"><a href="${url}" style="background:#0066ff;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">Voir ma maquette →</a></p>
+<p style="font-size:14px;color:#555;margin:24px 0 0">Tom Bauer — WebConceptor<br>contact@webconceptor.fr · 06 35 59 24 71</p>
+<p style="font-size:11px;color:#999;margin:16px 0 0;border-top:1px solid #eee;padding-top:12px"><a href="https://webconceptor.fr/api/unsubscribe?email=${encodeURIComponent(p.email)}" style="color:#999">Se désabonner</a></p>
+</div>`
+        const ok = await sendBrevoEmail(p.email, p.name, `Offre -20 % sur votre maquette — ${p.name}`, html, `Offre exclusive -20% : 256 EUR au lieu de 320 EUR.\nValable 24h : ${url}\n\nTom Bauer — WebConceptor`)
         if (ok) {
           await supabase.from('prospects').update({ followup_sms_sent_at: new Date().toISOString() }).eq('id', p.id)
           await tg(`💸 <b>AGENT 5 — OFFRE FLASH -20%</b>\nEnvoyée à <b>${p.name}</b> · ${p.city||'—'}`, true)
