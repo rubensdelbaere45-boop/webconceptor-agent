@@ -13,6 +13,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { createClient } from '@supabase/supabase-js'
+import ws from 'ws'
 
 // ── Config ─────────────────────────────────────────────────────
 const SUPABASE_URL  = process.env.SUPABASE_URL  || process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -27,7 +28,9 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
   process.exit(1)
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  realtime: { transport: ws },
+})
 
 // ── Suivi des follow-ups planifiés (in-memory) ──────────────────
 // { slug → { prospect, triggerAt, type } }
