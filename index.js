@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
    WebConceptor — Multi-Agent Sales System (Railway)
-   6 agents en parallèle, 1 seul process, 24h/24
+   7 agents en parallèle, 1 seul process, 24h/24
 
    AGENT 1 — Réaltime : SMS < 30s dès 1ère vue maquette
    AGENT 2 — Briefing 8h : TOP 5 prospects à appeler aujourd'hui
@@ -8,6 +8,7 @@
    AGENT 4 — Alerte 3 vues : prospect ultra-chaud sans achat
    AGENT 5 — Offre flash : -20% aux hésitants (2+ vues)
    AGENT 6 — Rapport 19h : stats de la journée
+   AGENT 7 — LUXURY : génère maquettes Stitch auto pour prospects premium
    ═══════════════════════════════════════════════════════════════ */
 
 // Polyfill WebSocket pour Node < 22 (Railway utilise Node 20)
@@ -17,6 +18,7 @@ if (!globalThis.WebSocket) globalThis.WebSocket = ws
 
 import { createClient } from '@supabase/supabase-js'
 import { createServer } from 'http'
+import { generateLuxuryMockup } from './stitch-generator.js'
 
 // ── Config ──────────────────────────────────────────────────────
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -25,6 +27,7 @@ const BREVO_KEY    = process.env.BREVO_API_KEY
 const TG_TOKEN     = process.env.TELEGRAM_BOT_TOKEN
 const TG_CHAT      = process.env.TELEGRAM_CHAT_ID
 const BASE_URL     = process.env.BASE_URL || 'https://webconceptor.fr'
+const ADMIN_KEY    = process.env.ADMIN_SECRET_KEY || 'Rubens2026-WebConceptor'
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error('❌ SUPABASE_URL et SUPABASE_SERVICE_KEY sont requis')
@@ -409,6 +412,86 @@ setInterval(() => agent4_threeViewsAlert(), 15 * 60000)
 agent4_threeViewsAlert() // scan immédiat au démarrage
 
 // ══════════════════════════════════════════════════════════════════
+// AGENT 7 — LUXURY : génère les maquettes Stitch automatiquement
+// ══════════════════════════════════════════════════════════════════
+
+const generatingLuxury = new Set() // évite les doubles générations
+
+async function agent7_generateLuxuryMockups() {
+  if (!process.env.STITCH_API_KEY) return // skip si pas de clé Stitch
+
+  try {
+    // Cherche les prospects luxury sans maquette Stitch
+    const { data } = await supabase.from('prospects')
+      .select('id, slug, name, city, business_type, google_rating, google_reviews_count, about_scraped')
+      .eq('is_luxury', true)
+      .eq('stitch_generated', false)
+      .in('status', ['found', 'ready'])
+      .not('email', 'is', null)
+      .not('email_bounced', 'eq', true)
+      .order('google_reviews_count', { ascending: false })
+      .limit(3) // max 3 par scan — Stitch prend du temps
+
+    if (!data?.length) return
+
+    for (const p of data) {
+      if (generatingLuxury.has(p.slug)) continue
+      generatingLuxury.add(p.slug)
+
+      log('A7', `✨ Génération Stitch : ${p.name} (${p.city || '?'})`)
+
+      // Marquer comme en cours
+      await supabase.from('prospects').update({ stitch_pending: true }).eq('id', p.id)
+
+      try {
+        const { html, projectId } = await generateLuxuryMockup(p)
+
+        // Sauvegarder dans Supabase
+        await supabase.from('prospects').update({
+          mockup_html: html,
+          stitch_generated: true,
+          stitch_pending: false,
+          updated_at: new Date().toISOString(),
+        }).eq('id', p.id)
+
+        // Envoyer l'email luxury
+        await fetch(`${BASE_URL}/api/prospect/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+          body: JSON.stringify({ prospect_slug: p.slug, force: true }),
+        }).catch(() => {})
+
+        // Telegram alert
+        const url = `${BASE_URL}/prospects/${p.slug}`
+        await tg(
+          `✨ <b>AGENT 7 — MAQUETTE STITCH GÉNÉRÉE</b>\n\n` +
+          `<b>${p.name}</b> · ${p.city || '—'}\n` +
+          `⭐ ${p.google_rating || '—'}/5 · 💶 860€\n` +
+          `📐 Stitch project: ${projectId}\n\n` +
+          `Email luxury envoyé ! <a href="${url}">→ Voir la maquette</a>`
+        )
+
+        log('A7', `✅ ${p.name} — maquette Stitch + email envoyés`)
+      } catch (e) {
+        log('A7', `❌ Échec pour ${p.name} : ${e.message}`)
+        await supabase.from('prospects').update({ stitch_pending: false }).eq('id', p.id)
+      } finally {
+        generatingLuxury.delete(p.slug)
+      }
+
+      // Pause entre générations
+      await new Promise(r => setTimeout(r, 15000))
+    }
+  } catch (e) {
+    log('A7', `❌ ${e}`)
+  }
+}
+
+// Vérifier les prospects luxury toutes les 30 minutes
+setInterval(() => agent7_generateLuxuryMockups(), 30 * 60000)
+agent7_generateLuxuryMockups() // scan immédiat au démarrage
+
+// ══════════════════════════════════════════════════════════════════
 // HEALTHCHECK HTTP (Railway le requiert)
 // ══════════════════════════════════════════════════════════════════
 
@@ -416,14 +499,17 @@ createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify({
     status: 'ok',
-    agents: 6,
+    agents: 7,
+    stitch_enabled: !!process.env.STITCH_API_KEY,
     scheduled: scheduled.size,
     uptime_s: Math.floor(process.uptime()),
   }))
 }).listen(process.env.PORT || 3000, () => {
-  log('SYS', '🚀 6 agents démarrés — WebConceptor Sales System')
+  log('SYS', '🚀 7 agents démarrés — WebConceptor Sales System')
   log('SYS', `A1: Realtime SMS | A2: Briefing 8h | A3: Relance froids`)
   log('SYS', `A4: Alerte 3 vues | A5: Offre flash | A6: Rapport 19h`)
+  log('SYS', `A7: ✨ Stitch Luxury — ${process.env.STITCH_API_KEY ? '✅ ACTIVE' : '⚠️ STITCH_API_KEY manquante'}`)
+
 })
 
 process.on('SIGTERM', () => {
