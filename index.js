@@ -170,48 +170,11 @@ setInterval(async () => {
   }
 }, 60000)
 
-// Supabase Realtime — reconnexion avec backoff exponentiel + anti-cascade
+// Realtime désactivé — Railway US East ne peut pas joindre Supabase eu-west-1
+// Le polling toutes les 2 min (ci-dessous) est suffisant pour les SMS chauds.
 let realtimeChannel = null
-let realtimeRetries = 0
-let realtimeTimer   = null  // un seul timer actif à la fois
-let realtimeActive  = false // évite les appels simultanés
-
-function connectRealtime() {
-  if (realtimeActive) return // anti-cascade : une seule tentative à la fois
-  realtimeActive = true
-
-  if (realtimeTimer) { clearTimeout(realtimeTimer); realtimeTimer = null }
-  if (realtimeChannel) {
-    try { supabase.removeChannel(realtimeChannel) } catch {}
-    realtimeChannel = null
-  }
-
-  realtimeChannel = supabase
-    .channel(`wc-agent1-${Date.now()}`)
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'prospects' }, (payload) => {
-      const o = payload.old, n = payload.new
-      if (!o.opened_at && n.opened_at) agent1_onFirstView(n)
-      if ((o.view_count|0) === 1 && (n.view_count|0) === 2) agent1_onSecondView(n)
-      if (!o.cart_opened_at && n.cart_opened_at) agent1_onCartOpened(n)
-    })
-    .subscribe((status, err) => {
-      log('A1', `Realtime: ${status}${err ? ' — ' + (err.message || err) : ''}`)
-      if (status === 'SUBSCRIBED') {
-        realtimeRetries = 0
-        realtimeActive  = false
-        log('A1', '✅ Realtime connecté — polling suspendu')
-      } else if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) {
-        realtimeActive = false // libère le verrou avant de reschedule
-        realtimeRetries++
-        // Backoff exponentiel : 5s, 10s, 20s, 40s … max 5 min
-        const delay = Math.min(300000, 5000 * Math.pow(2, Math.min(realtimeRetries - 1, 6)))
-        log('A1', `⚠️ Reconnexion dans ${Math.round(delay/1000)}s (tentative ${realtimeRetries}) — polling actif`)
-        realtimeTimer = setTimeout(connectRealtime, delay)
-      }
-    })
-}
-
-connectRealtime()
+let realtimeRetries = 1 // polling actif dès le départ
+log('A1', '📡 Mode polling — SMS envoyé dans les 2 min après 1ère vue')
 
 // ── Fallback polling quand Realtime échoue (plan Free Supabase) ────
 // Vérifie toutes les 2 min les nouvelles premières vues manquées
