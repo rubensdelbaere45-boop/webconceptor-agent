@@ -112,7 +112,7 @@ function injectWebConceptorBranding(html, prospect) {
       <span class="wc-trust-item">Paiement sécurisé</span>
     </div>
   </div>
-  <button class="wc-order-btn" onclick="window.location.href='${BASE_URL}/prospects/${slug}'">Je commande ce site → ${price}</button>
+  <button class="wc-order-btn" onclick="pmOpen()">Je commande ce site → ${price}</button>
 </div>
 <div style="height:44px"></div>`
 
@@ -188,8 +188,9 @@ export async function generateLuxuryMockup(prospect) {
   console.log(`[Stitch] ✅ Projet créé : ${project.id}`)
 
   // 2. Générer la page — prompt luxury ou standard selon is_luxury
+  // IMPORTANT : ne pas passer deviceType → sinon htmlCode absent de la réponse
   const prompt = prospect.is_luxury ? buildLuxuryPrompt(prospect) : buildStandardPrompt(prospect)
-  const screen = await project.generate(prompt, 'DESKTOP')
+  const screen = await project.generate(prompt)
   console.log(`[Stitch] ✅ Écran généré : ${screen.id}`)
 
   // 3. Récupérer l'URL de téléchargement du HTML
