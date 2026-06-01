@@ -1,0 +1,17 @@
+{
+  "name": "webconceptor-sales-agent",
+  "version": "1.0.0",
+  "description": "Agent de vente IA — écoute les vues de maquettes et envoie SMS + relances automatiques",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
