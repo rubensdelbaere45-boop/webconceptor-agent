@@ -203,6 +203,38 @@ function connectRealtime() {
 
 connectRealtime()
 
+// ── Fallback polling quand Realtime échoue (plan Free Supabase) ────
+// Vérifie toutes les 2 min les nouvelles premières vues manquées
+const polledSlugs = new Set()
+
+async function agent1_pollingFallback() {
+  if (realtimeRetries === 0) return // Realtime OK, pas besoin de polling
+
+  try {
+    const since2min = new Date(Date.now() - 2 * 60000).toISOString()
+    const { data } = await supabase.from('prospects')
+      .select('id, slug, name, phone, city, google_rating, google_reviews_count, site_quality, opened_at, view_count, cart_opened_at, status')
+      .not('opened_at', 'is', null)
+      .gte('opened_at', since2min)
+      .neq('status', 'converted')
+      .limit(10)
+
+    if (!data?.length) return
+
+    for (const p of data) {
+      if (!polledSlugs.has(`first:${p.slug}`)) {
+        polledSlugs.add(`first:${p.slug}`)
+        agent1_onFirstView(p)
+      }
+    }
+
+    // Nettoyer le cache après 1h
+    if (polledSlugs.size > 500) polledSlugs.clear()
+  } catch {}
+}
+
+setInterval(agent1_pollingFallback, 2 * 60000)
+
 // ══════════════════════════════════════════════════════════════════
 // AGENT 2 — BRIEFING 8H : TOP 5 prospects à appeler
 // ══════════════════════════════════════════════════════════════════
