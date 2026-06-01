@@ -90,7 +90,7 @@ async function sendBrevoEmail(to, toName, subject, html, text) {
       method: 'POST',
       headers: { 'api-key': BREVO_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
-        sender: { name: 'WebConceptor', email: 'contact@webconceptor.fr' },
+        sender: { name: 'Tom Bauer — WebConceptor', email: 'contact@webconceptor.fr' },
         to: [{ email: to, name: toName || to }],
         subject,
         htmlContent: html,
@@ -132,7 +132,7 @@ async function agent1_onFirstView(p) {
 
   let smsSent = false
   if (p.phone) {
-    const txt = gsm(`Bonjour, Tom de WebConceptor. J'ai prepare une maquette pour ${String(p.name||'').slice(0,28)}. Quelques minutes pour la voir ? ${url} STOP`).slice(0,160)
+    const txt = gsm(`Bonjour, Tom Bauer de WebConceptor. Maquette preparee pour ${String(p.name||'').slice(0,25)}. Quelques minutes ? ${url} STOP`).slice(0,160)
     smsSent = await sendSMS(p.phone, txt)
     if (smsSent) await supabase.from('prospects').update({ hot_sms_sent_at: new Date().toISOString() }).eq('id', p.id)
   }
