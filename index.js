@@ -170,15 +170,38 @@ setInterval(async () => {
   }
 }, 60000)
 
-// Supabase Realtime
-const channel = supabase.channel('wc-agent1')
-  .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'prospects' }, (payload) => {
-    const o = payload.old, n = payload.new
-    if (!o.opened_at && n.opened_at) agent1_onFirstView(n)
-    if ((o.view_count|0) === 1 && (n.view_count|0) === 2) agent1_onSecondView(n)
-    if (!o.cart_opened_at && n.cart_opened_at) agent1_onCartOpened(n)
-  })
-  .subscribe((s, e) => log('A1', `Realtime: ${s}${e ? ' — ' + e.message : ''}`))
+// Supabase Realtime — reconnexion automatique sur erreur
+let realtimeChannel = null
+let realtimeRetries = 0
+
+function connectRealtime() {
+  if (realtimeChannel) {
+    try { supabase.removeChannel(realtimeChannel) } catch {}
+    realtimeChannel = null
+  }
+  realtimeChannel = supabase
+    .channel(`wc-agent1-${Date.now()}`)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'prospects' }, (payload) => {
+      const o = payload.old, n = payload.new
+      if (!o.opened_at && n.opened_at) agent1_onFirstView(n)
+      if ((o.view_count|0) === 1 && (n.view_count|0) === 2) agent1_onSecondView(n)
+      if (!o.cart_opened_at && n.cart_opened_at) agent1_onCartOpened(n)
+    })
+    .subscribe((status, err) => {
+      log('A1', `Realtime: ${status}${err ? ' — ' + (err.message || err) : ''}`)
+      if (status === 'SUBSCRIBED') {
+        realtimeRetries = 0
+        log('A1', '✅ Realtime connecté')
+      } else if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) {
+        realtimeRetries++
+        const delay = Math.min(30000, 5000 * realtimeRetries)
+        log('A1', `⚠️ Reconnexion dans ${delay / 1000}s (tentative ${realtimeRetries})`)
+        setTimeout(connectRealtime, delay)
+      }
+    })
+}
+
+connectRealtime()
 
 // ══════════════════════════════════════════════════════════════════
 // AGENT 2 — BRIEFING 8H : TOP 5 prospects à appeler
