@@ -14,6 +14,7 @@ const BASE_URL = process.env.BASE_URL || 'https://webconceptor.fr'
 const STITCH_KEYS = [
   process.env.STITCH_API_KEY,
   process.env.STITCH_API_KEY_2,
+  process.env.STITCH_API_KEY_3,
 ].filter(Boolean)
 
 let _keyIndex = 0
