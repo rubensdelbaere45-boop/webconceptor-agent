@@ -83,55 +83,18 @@ Deep black backgrounds (#0C0C0C), warm gold accents (#C9A96E), Playfair Display 
 }
 
 // ── Injecter le branding WebConceptor ───────────────────────────
+// La barre de vente (CTA + modal Stripe) est injectée côté Next.js
+// par sales-ui-snippet.ts au moment du rendu, pas ici.
+// On injecte uniquement le pixel de tracking.
 function injectWebConceptorBranding(html, prospect) {
   const { slug } = prospect
-  const isLuxury = Boolean(prospect.is_luxury)
-  const price = isLuxury ? '860&nbsp;€' : '320&nbsp;€'
 
-  const orderBar = `
-<!-- STITCH_GENERATED -->
-<style>
-.wc-order-bar{position:fixed;top:0;left:0;right:0;z-index:99999;height:44px;background:#0a0a0a;display:flex;align-items:center;justify-content:space-between;padding:0 20px;gap:10px;font-family:-apple-system,sans-serif}
-.wc-order-bar-left{display:flex;align-items:center;gap:16px;flex:1}
-.wc-order-bar-label{color:rgba(255,255,255,0.75);font-size:11px;font-weight:500;white-space:nowrap}
-.wc-trust{display:flex;align-items:center;gap:10px}
-.wc-trust-item{color:rgba(255,255,255,0.45);font-size:10px;white-space:nowrap}
-.wc-trust-sep{color:rgba(255,255,255,0.15);font-size:10px}
-.wc-order-btn{padding:7px 22px;background:#fff;color:#0a0a0a;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;border-radius:100px;cursor:pointer;border:none;white-space:nowrap;flex-shrink:0}
-.wc-order-btn:hover{background:#f0c040;transform:scale(1.03)}
-@media(max-width:640px){.wc-trust{display:none}.wc-order-bar-label{font-size:10px}}
-</style>
-<div class="wc-order-bar">
-  <div class="wc-order-bar-left">
-    <span class="wc-order-bar-label">Votre site web professionnel</span>
-    <div class="wc-trust">
-      <span class="wc-trust-item">✓ Livraison rapide et suivie</span>
-      <span class="wc-trust-sep">·</span>
-      <span class="wc-trust-item">Satisfait ou remboursé 14j</span>
-      <span class="wc-trust-sep">·</span>
-      <span class="wc-trust-item">Paiement sécurisé</span>
-    </div>
-  </div>
-  <button class="wc-order-btn" onclick="pmOpen()">Je commande ce site → ${price}</button>
-</div>
-<div style="height:44px"></div>`
-
-  // Unsubscribe pixel (tracking)
   const trackingPixel = `<img src="${BASE_URL}/api/prospect/track-view" data-slug="${slug}" style="display:none" width="1" height="1" aria-hidden="true">`
 
-  let result = html
-  if (result.includes('<body')) {
-    result = result.replace(/(<body[^>]*>)/i, `$1\n${orderBar}`)
-  } else {
-    result = orderBar + result
+  if (html.includes('</body>')) {
+    return html.replace('</body>', `${trackingPixel}\n</body>`)
   }
-
-  // Injecter le pixel avant </body>
-  if (result.includes('</body>')) {
-    result = result.replace('</body>', `${trackingPixel}\n</body>`)
-  }
-
-  return result
+  return html + trackingPixel
 }
 
 // ── Génération principale ────────────────────────────────────────
@@ -174,6 +137,18 @@ export async function generateMockup(prospect) {
   return generateLuxuryMockup(prospect) // wrapper générique
 }
 
+async function getHtmlWithRetry(screen, maxAttempts = 6, delayMs = 4000) {
+  for (let i = 1; i <= maxAttempts; i++) {
+    const url = await screen.getHtml()
+    if (url) return url
+    if (i < maxAttempts) {
+      console.log(`[Stitch] ⏳ htmlCode pas encore prêt, tentative ${i}/${maxAttempts} dans ${delayMs/1000}s…`)
+      await new Promise(r => setTimeout(r, delayMs))
+    }
+  }
+  throw new Error('htmlCode.downloadUrl toujours vide après toutes les tentatives — crédits épuisés ou erreur API')
+}
+
 export async function generateLuxuryMockup(prospect) {
   const apiKey = process.env.STITCH_API_KEY
   if (!apiKey) {
@@ -182,27 +157,17 @@ export async function generateLuxuryMockup(prospect) {
 
   console.log(`[Stitch] 🎨 Génération pour : ${prospect.name} (${prospect.city || '?'})`)
 
-  // 1. Projet unique fixe — UN seul projet pour tous les prospects
-  // Évite la création de dizaines de projets en cas de retry
-  const FIXED_PROJECT_ID = process.env.STITCH_PROJECT_ID
-  let project
-  if (FIXED_PROJECT_ID) {
-    project = stitch.project(FIXED_PROJECT_ID)
-    console.log(`[Stitch] ♻️ Projet fixe réutilisé : ${FIXED_PROJECT_ID}`)
-  } else {
-    // Premier run : crée le projet et affiche l'ID à mettre en variable
-    project = await stitch.createProject('WebConceptor')
-    console.log(`[Stitch] ✅ Projet créé : ${project.id} → Ajoute STITCH_PROJECT_ID=${project.id} dans Railway`)
-  }
+  // 1. Nouveau projet à chaque génération — évite les états corrompus sur projet réutilisé
+  const project = await stitch.createProject(`WebConceptor-${Date.now()}`)
+  console.log(`[Stitch] ✅ Projet créé : ${project.id}`)
 
-  // 2. Générer la page — prompt luxury ou standard selon is_luxury
-  // IMPORTANT : ne pas passer deviceType → sinon htmlCode absent de la réponse
+  // 2. Générer la page — pas de deviceType → htmlCode présent dans la réponse
   const prompt = prospect.is_luxury ? buildLuxuryPrompt(prospect) : buildStandardPrompt(prospect)
   const screen = await project.generate(prompt)
   console.log(`[Stitch] ✅ Écran généré : ${screen.id}`)
 
-  // 3. Récupérer l'URL de téléchargement du HTML
-  const htmlUrl = await screen.getHtml()
+  // 3. Récupérer l'URL HTML avec retry (htmlCode peut mettre quelques secondes à être disponible)
+  const htmlUrl = await getHtmlWithRetry(screen)
   console.log(`[Stitch] ✅ URL HTML obtenue`)
 
   // 4. Télécharger le HTML
