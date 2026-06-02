@@ -6,9 +6,29 @@
    STITCH_API_KEY doit être dans les variables d'environnement.
    ═══════════════════════════════════════════════════════════════ */
 
-import { stitch } from '@google/stitch-sdk'
+import { stitch as stitchSdk } from '@google/stitch-sdk'
 
 const BASE_URL = process.env.BASE_URL || 'https://webconceptor.fr'
+
+// Rotation entre les 2 clés Stitch (800 crédits/jour)
+const STITCH_KEYS = [
+  process.env.STITCH_API_KEY,
+  process.env.STITCH_API_KEY_2,
+].filter(Boolean)
+
+let _keyIndex = 0
+function getStitchInstance() {
+  const key = STITCH_KEYS[_keyIndex % STITCH_KEYS.length]
+  process.env.STITCH_API_KEY = key
+  return stitchSdk
+}
+function rotateKey() {
+  _keyIndex++
+  console.log(`[Stitch] 🔄 Rotation clé → clé ${(_keyIndex % STITCH_KEYS.length) + 1}/${STITCH_KEYS.length}`)
+}
+
+// Alias pour le reste du code
+const stitch = { createProject: (...args) => getStitchInstance().createProject(...args) }
 
 // ── Prompt luxury restauration ──────────────────────────────────
 function buildLuxuryPrompt(prospect) {
@@ -141,12 +161,16 @@ async function getHtmlWithRetry(screen, maxAttempts = 6, delayMs = 4000) {
   for (let i = 1; i <= maxAttempts; i++) {
     const url = await screen.getHtml()
     if (url) return url
+    // À mi-parcours, on tente une rotation de clé
+    if (i === Math.floor(maxAttempts / 2) && STITCH_KEYS.length > 1) {
+      rotateKey()
+    }
     if (i < maxAttempts) {
       console.log(`[Stitch] ⏳ htmlCode pas encore prêt, tentative ${i}/${maxAttempts} dans ${delayMs/1000}s…`)
       await new Promise(r => setTimeout(r, delayMs))
     }
   }
-  throw new Error('htmlCode.downloadUrl toujours vide après toutes les tentatives — crédits épuisés ou erreur API')
+  throw new Error('htmlCode.downloadUrl vide sur toutes les clés — crédits épuisés')
 }
 
 export async function generateLuxuryMockup(prospect) {
